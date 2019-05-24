@@ -1,106 +1,201 @@
-#undef UNICODE
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
 #define WIN32_LEAN_AND_MEAN
-
-//#include <windows.h>
 #include <winsock2.h>
-#include <ws2tcpip.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <iostream>
 #include <string>
-#include <fstream>
-
-// Need to link with Ws2_32.lib
-#pragma comment (lib, "Ws2_32.lib")
-// #pragma comment (lib, "Mswsock.lib")
-
-#define DEFAULT_BUFLEN 256
+#include <Windows.h>
+#include "CommandHandler.h"
+//#include <Windows.h>
+#include <VersionHelpers.h>
 
 using namespace std;
-int main(void)
+#pragma comment(lib, "Ws2_32.lib")
+#define DEFAULT_PORT 2007
+// default TCP socket type
+#define DEFAULT_PROTO SOCK_STREAM
+
+
+
+
+
+void Usage(char *progname)
 {
-	std::cout << "****************\n*    SERVER    *\n****************\n";
-
-
-	char str[INET_ADDRSTRLEN];
-
-	//Initialize Winsock
-	WSADATA wsaData;
-	int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-	if (iResult != NO_ERROR) {
-		std::cout << "WSAStartup failed with error: " << iResult << std::endl;
-		return 1;
-	}
-
-
-	//Create a SOCKET for listening for incoming connections request
-	SOCKET SrvSocket;
-	SrvSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (SrvSocket == INVALID_SOCKET) {
-		std::cout << "Socket failed with error: " << WSAGetLastError() << std::endl;
-		WSACleanup();
-		return 1;
-	}
-
-
-	//The sockaddr_in structure specifies the address family,
-	//IP address, and port for the socket that is being bound
-	sockaddr_in addrServer;
-	addrServer.sin_family = AF_INET;
-	InetPton(AF_INET, "127.0.0.1", &addrServer.sin_addr.s_addr);
-	//InetPton(AF_INET, "192.168.0.20", &addrServer.sin_addr.s_addr);
-	addrServer.sin_port = htons(6666);
-	memset(&(addrServer.sin_zero), '\0', 8);
-
-	//Bind socket
-	if (bind(SrvSocket, (SOCKADDR *)& addrServer, sizeof(addrServer)) == SOCKET_ERROR) {
-		std::cout << "Bind failed with error: " << WSAGetLastError() << std::endl;
-		closesocket(SrvSocket);
-		WSACleanup();
-		return 1;
-	}
-
-
-
-	//Variables for recieve
-	int iSendResult;
-	char recvbuf[DEFAULT_BUFLEN];
-	int recvbuflen = DEFAULT_BUFLEN;
-
-
-
-	struct sockaddr_in cliAddr;
-	int cliAddrLen = sizeof(cliAddr);
-	int count = recvfrom(SrvSocket, recvbuf, DEFAULT_BUFLEN, 0, (struct sockaddr *)&cliAddr, &cliAddrLen);
-
-
-	inet_ntop(AF_INET, &cliAddr.sin_addr, str, INET_ADDRSTRLEN);
-	std::cout << "Recieved name from: " << str << std::endl;
-	//std::cout << "Recieved: " << recvbuf << std::endl;
-
-
-	//Create string
-	std::string command;
-	//std::cout << command << std::endl;
-	for (int i = 0; i < count; i++) command = recvbuf;
-	cout << "�������� �������� - " << command << endl;
-
-
-	intelect(command);
-	const char* sendbuf = tempc;
-
-
-	inet_ntop(AF_INET, &cliAddr.sin_addr, str, INET_ADDRSTRLEN);
-	std::cout << "Sending size to: " << str << std::endl;
-
-	int c = strlen(sendbuf);
-	sendto(SrvSocket, sendbuf, c, 0, (struct sockaddr *)&cliAddr, cliAddrLen);
-
-	// cleanup
-	closesocket(SrvSocket);
+	fprintf(stderr, "Usage: %s -p [protocol] -e [port_num] -i [ip_address]\n", progname);
+	fprintf(stderr, "Where:\n\t- protocol is one of TCP or UDP\n");
+	fprintf(stderr, "\t- port_num is the port to listen on\n");
+	fprintf(stderr, "\t- ip_address is the ip address (in dotted\n");
+	fprintf(stderr, "\t- Hit Ctrl-C to terminate server program...\n");
+	fprintf(stderr, "\t- The defaults are TCP, 2007 and INADDR_ANY.\n");
 	WSACleanup();
+	exit(1);
+}
 
+// https://docs.microsoft.com/en-us/windows/desktop/api/versionhelpers/nf-versionhelpers-iswindowsversionorgreater
 
-	getchar();
+int main(int argc, char **argv)
+{
+	CommandHandler handler;
+	//string path = "C://";
+	//int q = handler.CountFile(path + "*.*");
+	//printf(handler.Dir(path+ "*.*").c_str());
+	//string version = handler.osVersion();
+	char Buffer[1000];
+	char *ip_address = NULL;
+	unsigned short port = DEFAULT_PORT;
+	int retval;
+	int fromlen;
+	int i;
+	int socket_type = DEFAULT_PROTO;
+	struct sockaddr_in local, from;
+	WSADATA wsaData;
+	SOCKET listen_socket, msgsock;
+	/* Parse arguments, if there are arguments supplied */
+	if (argc > 1)
+	{
+		for (i = 1; i < argc; i++)
+		{
+			// switches or options...
+			if ((argv[i][0] == '-') || (argv[i][0] == '/'))
+			{
+				// Change to lower...if any
+				switch (tolower(argv[i][1]))
+				{
+					// if -p or /p
+				case 'p':
+					if (!_stricmp(argv[i + 1], "TCP"))
+						socket_type = SOCK_STREAM;
+					else if (!_stricmp(argv[i + 1], "UDP"))
+						socket_type = SOCK_DGRAM;
+					else
+						Usage(argv[0]);
+					i++;
+					break;
+					// if -i or /i, for server it is not so useful...
+				case 'i':
+					ip_address = argv[++i];
+					break;
+					// if -e or /e
+				case 'e':
+					port = atoi(argv[++i]);
+					break;
+					// No match...
+				default:
+					Usage(argv[0]);
+					break;
+				}
+			}
+			else
+				Usage(argv[0]);
+		}
+	}
+	// Request Winsock version 2.2
+	if ((retval = WSAStartup(0x202, &wsaData)) != 0){
+		fprintf(stderr, "Server: WSAStartup() failed with error %d\n", retval);
+		WSACleanup();
+		return -1;
+	}
+	else
+		printf("Server: WSAStartup() is OK.\n");
+	if (port == 0){
+		Usage(argv[0]);
+	}
+	local.sin_family = AF_INET;
+	local.sin_addr.s_addr = (!ip_address) ? INADDR_ANY : inet_addr(ip_address);
+	/* Port MUST be in Network Byte Order */
+	local.sin_port = htons(port);
+	// TCP socket
+	listen_socket = socket(AF_INET, socket_type, 0);
+	if (listen_socket == INVALID_SOCKET) {
+		fprintf(stderr, "Server: socket() failed with error %d\n", WSAGetLastError());
+		WSACleanup();
+		return -1;
+	}
+	else
+		printf("Server: socket() is OK.\n");
+	// bind() associates a local address and port combination with the socket just created.
+	// This is most useful when the application is a
+	// server that has a well-known port that clients know about in advance.
+	if (bind(listen_socket, (struct sockaddr*)&local, sizeof(local)) == SOCKET_ERROR){
+		fprintf(stderr, "Server: bind() failed with error %d\n", WSAGetLastError());
+		WSACleanup();
+		return -1;
+	}
+	else
+		printf("Server: bind() is OK.\n");
+	// So far, everything we did was applicable to TCP as well as UDP.
+	// However, there are certain steps that do not work when the server is
+	// using UDP. We cannot listen() on a UDP socket.
+	if (socket_type != SOCK_DGRAM){
+		if (listen(listen_socket, 5) == SOCKET_ERROR){
+			fprintf(stderr, "Server: listen() failed with error %d\n", WSAGetLastError());
+			WSACleanup();
+			return -1;
+		}
+		else
+			printf("Server: listen() is OK.\n");
+	}
+	printf("Server: %s: I'm listening and waiting connection\non port %d, protocol %s\n", argv[0], port, (socket_type == SOCK_STREAM) ? "TCP" : "UDP");
+	while (1)
+	{
+		fromlen = sizeof(from);
+		// accept() íå èìååò ñìûñëà â UDP, òàê êàê ìû íå ñëóøàåì()
+		if (socket_type != SOCK_DGRAM) {
+			msgsock = accept(listen_socket, (struct sockaddr*)&from, &fromlen);
+			if (msgsock == INVALID_SOCKET) {
+				fprintf(stderr, "Server: accept() error %d\n", WSAGetLastError());
+				WSACleanup();
+				return -1;
+			}
+			else
+				printf("Server: accept() is OK.\n");
+			printf("Server: accepted connection from %s, port %d\n", inet_ntoa(from.sin_addr), htons(from.sin_port));
+		}
+		else
+			msgsock = listen_socket;
+		// Â ñëó÷àå SOCK_STREAM ñåðâåð ìîæåò âûïîëíèòü recv() è send() íà
+		// ïðèíÿòûé ñîêåò, à çàòåì çàêðûòü åãî.
+		// Îäíàêî äëÿ SOCK_DGRAM (UDP) ñåðâåð áóäåò âûïîëíÿòü recvfrom() è sendto() â öèêëå.
+		if (socket_type != SOCK_DGRAM)
+			retval = recv(msgsock, Buffer, sizeof(Buffer), 0);
+		else {
+			retval = recvfrom(msgsock, Buffer, sizeof(Buffer), 0, (struct sockaddr *)&from, &fromlen);
+			printf("Server: Received datagram from %s\n", inet_ntoa(from.sin_addr));
+		}
+		if (retval == SOCKET_ERROR) {
+			fprintf(stderr, "Server: recv() failed: error %d\n", WSAGetLastError());
+			closesocket(msgsock);
+			continue;
+		}
+		else
+			printf("Server: recv() is OK.\n");
+		if (retval == 0) {
+			printf("Server: Client closed connection.\n");
+			closesocket(msgsock);
+			continue;
+		}
+		printf("Server: Received %d bytes, data \"%s\" from client\n", retval, Buffer);
+		string rezult = handler(Buffer);
+		printf("Server: Echoing the same data back to client...\n");
+		if (socket_type != SOCK_DGRAM)
+			retval = send(msgsock, rezult.c_str(), sizeof(rezult.c_str()), 0);
+		else
+			retval = sendto(msgsock, rezult.c_str(), rezult.length(), 0, (struct sockaddr *)&from, fromlen);
+		if (retval == SOCKET_ERROR) {
+			fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
+		}
+		else {
+			printf("Server: send %s : %i  \n", rezult.c_str(), rezult.length());
+			printf("Server: send() is OK.\n");
+		}
+		if (socket_type != SOCK_DGRAM) {
+			printf("Server: I'm waiting more connection, try running the client\n");
+			printf("Server: program from the same computer or other computer...\n");
+			closesocket(msgsock);
+		}
+		else
+			printf("Server: UDP server looping back for more requests\n");
+		continue;
+	}
 	return 0;
 }
