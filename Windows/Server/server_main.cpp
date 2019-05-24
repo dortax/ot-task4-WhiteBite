@@ -44,7 +44,7 @@ int main(int argc, char **argv)
 	char *ip_address = NULL;
 	unsigned short port = DEFAULT_PORT;
 	int retval;
-	int fromlen;
+	int fromlen; 
 	int i;
 	int socket_type = DEFAULT_PROTO;
 	struct sockaddr_in local, from;
